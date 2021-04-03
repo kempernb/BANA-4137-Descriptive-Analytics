@@ -1,0 +1,740 @@
+---
+title: "Final Project - Bana 4137"
+author: "Nicholas Kemper, Emma Stidd, Acadia Morgan, Debjyoti Ghosh"
+date: "2/25/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Chrun Modeling
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Introduction
+
+Many divisions on retention, contribution and attrition are being discussed. In the sense of the market, this may be important because of the sales of consumers and the volume of effort needed to retain consistency. The corporation today cannot work for the solution for the mainstream marketing of diversity. Research on Customer Importance and industry change Predictions will allow customers to join various classes of marketing programmers. Customers that live in the personalised market of retail banking. Corporation. Business. Customer agencies are normal banks and do not overchange the financial aid provider.
+
+
+## Background
+
+Customer churn, also known as customer attrition, is deficient in customer service. Banks, insurance providers, streaming services, and retail firms often use consumer loyalty analysis and the rate of customer attrition as the major business indicators, because customer retention costs are far lower than those borne by customers today. 
+
+This analysis is focused on the behaviour of the banking clients who are supposed to leave the bank most frequently (i.e. turning off their bank account) by evaluating exploratory data sets. I want to read from customer patterns that are more striking. Fit models that are often used in churn research using statistics classification techniques.
+Study Descriptive Statistics
+Study of Decision Tree
+Study of Logistic Regression
+Examine additional data visualisation focused on our modelling methods for chosen variables.
+
+
+```{r include=FALSE}
+library(tidyverse)
+library(patchwork)
+library(vcd)
+library(gridExtra)
+library(knitr)
+library(corrplot)
+library(scales)
+library(lme4)
+library(DMwR)
+library(InformationValue)
+library(ROCR)
+library(rpart)
+library(MASS)
+library(ggmosaic)
+library(e1071)
+library(ranger)
+library(penalized)
+library(rpart.plot)
+library(ggcorrplot)
+library(caTools)
+library(tinytex)
+library(partykit)
+library(rcompanion)
+library(RColorBrewer)
+library(gridExtra)
+```
+
+Reading in the dataset
+```{r}
+bankChurn <- read.csv("Churn Modeling.csv")
+bankChurn <- bankChurn %>% 
+  dplyr::select(-CustomerId) %>% #remove unwanted column
+  mutate(Country = as.factor(Geography),
+         Gender = as.factor(Gender),
+         HasCreditCard = as.factor(HasCrCard),
+         IsActiveMember = as.factor(IsActiveMember),
+         Churned = as.factor(Exited),
+         Tenure = as.factor(Tenure),
+         NumOfProducts = as.factor(NumOfProducts)) 
+
+```
+## Data Overview
+
+* CreditScore: the range of credit score is from 350 to 850
+
+* Country: the regional bank has customers from three countries: France, Germany and Spain
+
+* Age: the range of customer’s age is from 18 to 92
+
+* Tenure: years that the customer has stayed with the bank
+
+* Balance: the amount of money available for withdrawal
+
+* NumOfProducts: number of products that the customers use in the bank
+
+* IsActiveMember: 1 indicates is active
+
+* EstimatedSalary: customer’s self-reported annual salary
+
+* Churned: whether the customer has churned (closed the bank account or not).
+
+## Descriptive Statistics
+
+Looking at summary and churn data
+```{r}
+summary(bankChurn)
+
+```
+
+
+```{r}
+library(tidyverse)
+library(readr)
+Churn_Modeling <- read_csv("Churn Modeling.csv")
+```
+
+Question 1: Does the person's age have a correlation to the balance in their account conditional to male and female?
+
+```{r}
+library(ggplot2)
+ggplot(data = Churn_Modeling, aes(x = Age, y = Balance, color = Gender))+
+geom_point()+
+geom_smooth()+
+labs(title = "Balance of Account vs Age", subtitle = "Female vs Male", x = "Age", y = "Balance")
+```
+
+From the scatterplot and smooth line that was created, there does not seem to be a correlation to age and balance in accounts. This was surprising because generally you think the older a person gets the more money they would have. However with investments and churning, I think it is a little different and explains why there is not a visual correlation. The trend lines for both male and female seem to look pretty flat which validates our hypothesis that there does not seem to be a trend between these variables. One thing we do notice is that there is generally a balance of 50,000 to 200,000, then there are several customers with balances of 0. 
+
+
+
+Question 2: Is there a relationship between region and balance in account conditional to whether the customer churned or not?
+
+```{r}
+ggplot(data = Churn_Modeling, aes(x = Exited, y = Balance, fill = Geography))+
+geom_bar(position = "dodge", stat = "summary", fun = "mean")+
+labs(title = "Balance of Account vs Churning", subtitle = "Between Countries", x = "Did the Customer Exit?", y = "Average Balance")
+```
+
+In this analysis, it appears that if a customer churns, the balance in their account may be a small amount higher than a customer who decides not to churn. In the graph, the left side indicates the customers who did not churn in France, Germany, and Spain. On the right it is customers who did churn in those countries. In every country, the right side is a little bit higher. In Germany the average account balance is almost double that in France and Spain. This could be because Germany is a wealthier country than the other 2. 
+
+Question: Since the churn is pretty low for the bank, I would like to cross reference with other banks to see the loss statistics.
+
+
+Visualizing churn in barplot
+```{r}
+ggplot(bankChurn, aes(Churned, fill = Churned)) +
+  geom_bar() +
+  theme(legend.position = 'none')
+
+```
+
+In Descriptive Statistics analysis, we can see most of our customers did not churn.
+
+## Correlation Matrix
+
+Question: How does the different factors affect churn? 
+Running a correlation matrix
+```{r}
+numericVarName <- names(which(sapply(bankChurn, is.numeric)))
+corr <- cor(bankChurn[,numericVarName], use = 'pairwise.complete.obs')
+ggcorrplot(corr, lab = TRUE)
+```
+
+The continuous variables ( i.e. no multicollinearity) don't have any high correlation. So all these endless factors I'm going to keep.
+
+We can also see that age has a strong connection to bank balance. Hence, the bank can attempt to support more accounts with older customers as they want stability, This could reduce churn.
+
+## Categorical Variable Distribution
+
+```{r message = FALSE, warning = FALSE}
+bankChurn %>%
+  dplyr::select(-Churned) %>% 
+  keep(is.factor) %>%
+  gather() %>%
+  group_by(key, value) %>% 
+  summarize(n = n()) %>% 
+  ggplot() +
+  geom_bar(mapping=aes(x = value, y = n, fill=key), color="black", stat='identity') + 
+  coord_flip() +
+  facet_wrap(~ key, scales = "free") +
+  theme_minimal() +
+  theme(legend.position = 'none')
+```
+
+Information extracted from the plots:
+
+* We have more male customers than females.
+* Customers from France (most), Germany and France.
+* Most of the customers have the bank’s credit card
+* We have an almost equal number of active and non-active members; not a very good sign
+* Most of the customers use one or two kinds of products, with a very few use three or four products
+* Almost equal number of customers in different tenure groups, except 0 and 10.
+
+## Continuous Variables Exploration
+
+### Age
+
+```{r message = FALSE, warning = FALSE}
+age_hist <- ggplot(bankChurn, aes(x = Age, fill = Churned)) +
+  geom_histogram(binwidth = 5) +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0,100,by=10), labels = comma)
+
+age_boxplot <- ggplot(bankChurn, aes(x = Churned, y = Age, fill = Churned)) +
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = 'none')
+age_hist | age_boxplot
+
+```
+
+– Non-churned customers have a right-skewed distribution (tend to be young). Outliers above 60 years old maybe our stable customers.
+
+– Churned customers are mostly around 40 to 50. They might need to switch to other banking service for retirement purpose or whole family issue.
+
+We can see very clear difference between these two groups.
+
+### Balance
+
+```{r message = FALSE, warning = FALSE}
+balance_hist <- ggplot(bankChurn, aes(x = Balance, fill = Churned)) +
+  geom_histogram() +
+  theme_minimal() +
+  scale_x_continuous(breaks = seq(0,255000,by=30000), labels = comma) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+balance_box <- ggplot(bankChurn, aes(x = Churned, y = Balance, fill = Churned)) +
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = 'none')
+
+balance_hist | balance_box
+```
+
+– We can see the distribution of these two groups are quite similar.
+
+– Surprisingly some non-churned customers have lower balance than churned customers.
+
+### Credit Score
+
+```{r message = FALSE, warning = FALSE}
+credit_hist <- ggplot(bankChurn, aes(x = CreditScore, fill = Churned)) +
+  geom_histogram() +
+  theme_minimal() +
+  #scale_x_continuous(breaks = seq(0,255000,by=30000), labels = comma) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+credit_box <- ggplot(bankChurn, aes(x = Churned, y = CreditScore, fill = Churned)) +
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = 'none')
+
+credit_hist | credit_box
+```
+
+Overall similar distribution. Some customers with extremely low credit score (on the left tail) as well as with high credit score also churned. It indicates that really low and high quality customer churn out easily than the average quality customer.
+
+### Estimated Salary
+
+```{r message = FALSE, warning = FALSE}
+estimated_hist <- ggplot(bankChurn, aes(x = EstimatedSalary, fill = Churned)) +
+  geom_histogram() +
+  theme_minimal() +
+  #scale_x_continuous(breaks = seq(0,255000,by=30000), labels = comma) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5))
+
+estimated_box <- ggplot(bankChurn, aes(x = Churned, y = EstimatedSalary, fill = Churned)) +
+  geom_boxplot() + 
+  theme_minimal() +
+  theme(legend.position = 'none')
+
+estimated_hist | estimated_box
+```
+
+Both groups have a very similar distribution. Estimated Salary might not be a very important infomation to decide if a customer will churn or not.
+
+## Categorical Variables Exploration
+
+```{r message = FALSE, warning = FALSE}
+gender_graph <- bankChurn %>%
+  dplyr::select(Gender, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(Gender), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'Gender')
+
+Country_graph <- bankChurn %>%
+  dplyr::select(Country, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(Country), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'Country')
+
+tenure_graph <- bankChurn %>%
+  dplyr::select(Tenure, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(Tenure), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'Tenure')
+
+HasCreditCard_graph <- bankChurn %>%
+  dplyr::select(HasCreditCard, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(HasCreditCard), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'HasCreditCard')
+
+IsActiveMember_graph <- bankChurn %>%
+  dplyr::select(IsActiveMember, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(IsActiveMember), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'IsActiveMember')
+
+NumOfProducts_graph <- bankChurn %>%
+  dplyr::select(NumOfProducts, Churned) %>% 
+  table(.) %>% 
+  as.data.frame() %>% 
+  ggplot(.) +
+  ggmosaic::geom_mosaic(aes(weight = Freq, x = product(NumOfProducts), fill = Churned)) +
+  ggthemes::theme_tufte() +
+  scale_fill_brewer(type = "qual") +
+  labs(x = 'NumOfProducts')
+  
+
+(gender_graph | Country_graph) / (IsActiveMember_graph | HasCreditCard_graph ) / (tenure_graph | NumOfProducts_graph)
+```
+
+Conclusion from these mosaic plots:
+
+– Female are more likely to churn than male
+
+– Customers in Germany are more likely to churn than customers in France and Spain
+
+– Inactive customers are more likely to churn than active (very reasonable)
+
+– Having credit card may not be a useful feature as we cannot really tell if a customer with credit card will churn or not
+
+– Customers in different tenure groups don’t have an apparent tendency to churn or stay
+
+– Customers who use 3 or 4 product are extremely likely to churn
+
+## Logistic regression analysis
+
+Our final statistical method will be logistic regression. Logistic regression involves regressing predictor variables on a binary outcome using a binomial link function. Let’s fit the model using the base general linear modeling function in R, glm.
+
+```{r message = FALSE, warning = FALSE}
+bankChurn <- bankChurn %>% 
+  dplyr::select(
+    Country,
+    Gender,
+    HasCreditCard,
+    IsActiveMember,
+    Churned,
+    Tenure,
+    NumOfProducts
+  )
+
+lr_fit <- glm(Churned ~., data = bankChurn,
+              family=binomial(link='logit'))
+summary(lr_fit)
+```
+
+By examining the significance values, we see similar predictor variables of importance. CreditScore, Age, and Gender Male have the lowest p-values and can be identified as the best predictors of customer churn.
+
+## Decision Tree 
+
+```{r message = FALSE, warning = FALSE}
+tree <- ctree(Gender ~  Churned   ,
+              data = bankChurn)
+plot(tree)
+print(tree)
+
+```
+
+### Question: Which factor has the highest effect on churning?
+
+To answer this, we need to find a method to compare correlation coefficients for both numerical and categorical variables. We first define a function that can find correlation between any pair of variables regardless of their class.
+
+```{r}
+any_correlation = function(df, cor_method="spearman", adjust_cramersv_bias=TRUE){
+    df_comb = expand.grid(names(df), names(df),  stringsAsFactors = F) %>% set_names("X1", "X2")
+
+    is_nominal <- function(x) class(x) %in% c("factor", "character")
+    is_numeric <- function(x) { is.integer(x) || is_double(x)}
+
+    f <- function(xName,yName) {
+        x <-  pull(df, xName)
+        y <-  pull(df, yName)
+
+        result <- if(is_nominal(x) && is_nominal(y)){
+            cv <- cramerV(as.character(x), as.character(y), bias.correct = adjust_cramersv_bias)
+            data.frame(xName, yName, assoc=cv, type="cramersV")
+
+        }else if(is_numeric(x) && is_numeric(y)){
+            correlation <- cor(x, y, method=cor_method, use="complete.obs")
+            data.frame(xName, yName, assoc=correlation, type="correlation")
+
+        }else if(is_numeric(x) && is_nominal(y)){
+            r_squared <- summary(lm(x ~ y))$r.squared
+            data.frame(xName, yName, assoc=sqrt(r_squared), type="anova")
+
+        }else if(is_nominal(x) && is_numeric(y)){
+            r_squared <- summary(lm(y ~x))$r.squared
+            data.frame(xName, yName, assoc=sqrt(r_squared), type="anova")
+
+        }else {
+            warning(paste("unmatched column type combination: ", class(x), class(y)))
+        }
+
+        result %>% mutate(complete_obs_pairs=sum(!is.na(x) & !is.na(y)), complete_obs_ratio=complete_obs_pairs/length(x)) %>% rename(x=xName, y=yName)
+    }
+
+    # applying function to each pair of variable
+    map2_df(df_comb$X1, df_comb$X2, f)
+}
+```
+
+Now we can visualize the correlation coefficients associating churning and every other variable.
+
+```{r}
+churn_corr <- any_correlation(bankChurn) %>% filter(y == "Churned" & x != "Churned") %>% dplyr::select(x:assoc)
+ggplot(churn_corr, aes(x, assoc)) + geom_bar(stat='identity', fill = "gold3") + labs(title = "Correlation of each variable with churning", x = "", y = "Correlation") + coord_flip()
+```
+
+We notice that number of products is the variable that affects churning the most. Let us investigate this further.
+
+```{r}
+df <- bankChurn %>%
+  dplyr::select(c(NumOfProducts, Churned)) %>%
+  group_by(NumOfProducts, Churned) %>%
+  summarise(N = n()) %>%
+  mutate(Total = sum(N), Ratio = N/sum(N)) %>%
+  filter(Churned == "Yes") %>%
+  dplyr::select(c(1,5))
+
+ggplot(df, aes(NumOfProducts, Ratio)) + geom_bar(stat='identity', fill = "turquoise4", width = 0.5) +
+  labs(title = "Relationship between churning and number of products", x = "No. of products used", y = "Ratio of customers churned")
+```
+
+The result is very bizarre. Customers who use two products are much less likely to churn in comparison to those who use only one product. However, customers who use more than two products are extremely likely to churn. Additionally, every single customer who used four products has churned. The bank must investigate into why this is the case. Perhaps the bank’s rewarding programs have some kind of bottleneck as more number of products are used. Another reason could be that the bank offers poor or no limited service for customers who wish to integrate different products for a single use case. It could also be that the bank does not offer competent interest rates on deposits or loans.
+
+### Question: What are the characteristics of loyal customers?
+
+Understanding the characteristics of loyal customers can be a very important tool for improving customer retention. It allows the bank to figure out how their service dynamic, customer demographics and other variables differ for the most loyal customers vs. all other customers.
+
+Let us define loyal customers as those who did not churn and have an arbitrary tenure of at least 5 years.
+
+```{r}
+loyalty <- bankChurn %>% mutate(Tenure = as.integer(Tenure)) %>% mutate(Loyal = factor(case_when((Churned == "No" & Tenure >= 5) ~ "Yes", (Churned == "Yes" | Tenure < 5) ~ "No")))
+```
+
+Let us take a look at summary statistics for customers who are categorized as loyal vs. those who are not.
+
+```{r}
+summary(loyalty[which(loyalty$Loyal == "Yes"), ])
+summary(loyalty[which(loyalty$Loyal == "No"), ])
+```
+
+```{r}
+country_compare <- t(rbind(table(loyalty[which(loyalty$Loyal == "Yes"), ]$Country), table(loyalty[which(loyalty$Loyal == "No"), ]$Country)))
+country_compare <- as.data.frame(apply(country_compare, 2, function(x){x*100/sum(x,na.rm=T)}))
+colnames(country_compare) <- c("Loyal", "Non-loyal")
+country_compare <- cbind(Country = rownames(country_compare), country_compare)
+country_compare <- country_compare %>% gather(Loyalty, Percentage, 2:3)
+
+gender_compare <- t(rbind(table(loyalty[which(loyalty$Loyal == "Yes"), ]$Gender), table(loyalty[which(loyalty$Loyal == "No"), ]$Gender)))
+gender_compare <- as.data.frame(apply(gender_compare, 2, function(x){x*100/sum(x,na.rm=T)}))
+colnames(gender_compare) <- c("Loyal", "Non-loyal")
+gender_compare <- cbind(Gender = rownames(gender_compare), gender_compare)
+gender_compare <- gender_compare %>% gather(Loyalty, Percentage, 2:3)
+
+country_plot <- ggplot(country_compare, aes(Loyalty, Percentage, fill = Country)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  scale_fill_brewer(palette = "Dark2")
+
+gender_plot <- ggplot(gender_compare, aes(Loyalty, Percentage, fill = Gender)) +
+  geom_bar(stat = "identity", width = 0.4) +
+  scale_fill_brewer(palette = "Set1")
+
+grid.arrange(country_plot, gender_plot, nrow = 1)
+```
+
+A number of observations can be made from the above summaries and plots.
+
+1. There are 5199 loyal customers as opposed to 4801 who are not.
+2. There is little or no noticeable trend between credit scores, estimated salary or credit card usage of loyal and non-loyal customers.
+3. Despite similar salary levels, loyal customers have a noticeably lower account balance to the tune of approximately 10% lower than non-loyal customers.
+4. Although there was a significant difference in median age of customers who churned and did not, such difference is considerably smaller in the case of loyal vs. non-loyal customers. The average loyal customer is younger in comparison (which is expected since the average customer who did not churn was also younger as noted previously).
+5. The ratio of loyal customers is evidently lower in Germany in comparison to other countries.
+6. Perhaps the most defining characteristic is gender. The loyal customer base of the bank is dominated by males. The bank must investigate why this is the case and introduce schemes to attract more female loyal customers.
+7. Customers who use exactly 2 products tend to become loyal customers. In contrast, those who use 3 or 4 products are overwhelmingly non-loyal customers.
+
+### Conclusion 
+
+This project provided a consumer turnover study in a personal banking operation. Churn prediction based on Descriptive Statistics, Correlation matrix and Decision Tree regression was the subject of the study.
+
+The number of products and services availed by the customer has the strongest influence on customer churning. As we spoke about in the study, it is highly likely that users who use more than two products churn out. The bank should thus proceed to investigate why. Perhaps any kind of shortcomings are found in the reward programs of the bank, or their credit interest is not quite attractive.
+
+Age also has significant correlation to consumer churn rate. As age increases, customers tend to fall out of favor with the bank. Perhaps, this is due to the lack of attractive retirement schemes or savings funds tailored for senior citizens. The bank can create preferential policies for dealing with these individuals.
+
+Another important thing to find here is that German consumers are more likely to switch in comparison to French and Spanish consumers, so the marketing teams of Germany can spend more time worrying about keeping German customers.
+
+# Cincinnati Police Police Calls for Service Data Analysis
+
+This dataset captures all Cincinnati Police Department Calls for Service. The City of Cincinnati's Computer Aided Dispatch (CAD) system records police incident response activity, which includes all calls for service to emergency operators, 911, alarms, police radio and non-emergency calls. CAD records all dispatch information, which is used by dispatchers, field supervisors, and on-scene officers to determine the priority, severity, and response needs surrounding the incident. Once an officer responds to a call, he/she updates the disposition to reflect findings on-scene.
+
+```{r message = FALSE}
+library(tidyverse)
+library(lubridate)
+library(highcharter)
+library(RColorBrewer)
+library(ggTimeSeries)
+library(RColorBrewer)
+library(wordcloud)
+library(wordcloud2)
+library(tidyverse)
+library(tm)
+library(htmlwidgets)
+```
+
+# Cincinnati Police Data
+
+Read Cincinnati Police Data, from 2018 - 2020. Only these years are selected and analyzed as the dataset is quite large. When reading in, one can see each of the columns reported.
+
+Each row in the dataset represents a single police call for service. Many different variables are reported for each call.
+
+```{r message = FALSE} 
+# Police data, only from years 2018-20 ----
+police <-
+  read_csv(
+    "police.csv"
+  )
+```
+
+# Formatting the data
+
+Some of the columns need to be formatted as a date-time in the dataset. We can do this with the code below. 
+
+```{r}
+police$CREATE_DATE <- as.Date(substring(police$CREATE_TIME_INCIDENT,1,10),format="%m/%d/%Y")
+police$CREATE_TIME_INCIDENT <- as.POSIXct(police$CREATE_TIME_INCIDENT, format="%m/%d/%Y %H:%M:%S")
+police$ARRIVAL_TIME_PRIMARY_UNIT <- as.POSIXct(police$ARRIVAL_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+police$CLOSED_TIME_INCIDENT <- as.POSIXct(police$ARRIVAL_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+police$DISPATCH_TIME_PRIMARY_UNIT <- as.POSIXct(police$DISPATCH_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+```
+
+Here we create some year and date variables for analysis in the future. The code below will create year and date variables and remove years that contain NA values.
+
+```{r}
+# Create a year variable ----
+police$year <- year(police$CREATE_TIME_INCIDENT)
+# Create a date variable ----
+police$date <- as.Date(police$CREATE_TIME_INCIDENT)
+# drop NA values
+police <- police[!is.na(police$year), ]
+```
+
+# Question: How does the Cincinnati Police Department categorize events?
+
+The Cincinnati police department assigns a priority color to each event it catagorizes, the code below shows each of the levels of priority colors.
+
+```{r}
+priority_colors <- police %>% 
+  dplyr::select(PRIORITY_COLOR) %>% 
+  drop_na() %>%
+  unique()
+
+colors <- priority_colors$PRIORITY_COLOR
+colors
+```
+
+
+There are four buckets of colors, `RED`,  `YELLOW`,  `BLUE`,  `PURPLE`. It will be interesting to further dive in and see what each level means in the dataset, 
+
+Each police call is also represented by a description of the event. By selecting descriptions at a specific priority level, we can perform text analysis and further analyze what each priority level really means.
+
+The below code is a function that will perform text analysis on this specific police call dataset and return frequent words from the `INCIDENT_TYPE_DESC`, incident description, variable.
+
+```{r  warning = FALSE}
+set.seed(1234) # for reproducibility
+ freqWordsPolice <- function(police_color){
+    text <- police_color$INCIDENT_TYPE_DESC
+    docs <- Corpus(VectorSource(text))
+    docs <- docs %>%
+      tm_map(removeNumbers) %>%
+      tm_map(removePunctuation) %>%
+      tm_map(stripWhitespace)
+    docs <- tm_map(docs, content_transformer(tolower))
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    dtm <- TermDocumentMatrix(docs)
+    matrix <- as.matrix(dtm)
+    words <- sort(rowSums(matrix), decreasing = TRUE)
+    df <- data.frame(word = names(words), freq = words)
+    
+    return(df)
+}
+```
+
+We can then visualize what type of words and descriptions are being used at each priority color by using word clouds. 
+
+## Purple Priority level analysis
+
+The below code performs analysis on `PURPLE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "PURPLE")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1.5, color='random-dark')
+```
+
+Common types of `PURPLE` level incidents include tresspassing, theft, and noise complaints. From this analysis, purple level incidents are relatively low-level crimes.
+
+## YELLOW Priority level analysis
+
+The below code performs analysis on `YELLOW` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "YELLOW")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1, color='random-dark')
+```
+
+The largest type of `YELLOW` level priority is a traffic stop. There are other incidents that are classified with a traffic stop that seem low in priority. This includes assault, armed, drug activity, and child abuse. This is interesting to see all these grouped in the same level.
+
+## BLUE Priority level analysis
+
+The below code performs analysis on `BLUE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "BLUE")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1.5, color='random-dark')
+```
+
+Common `BLUE` level incidents include accident with injuries, disorderly, indicated a specific emergency, hazard to traffic, and much more. Some of these events seem higher priority than the `YELLOW` and some do not.
+
+## BLUE Priority level analysis
+
+The below code performs analysis on `BLUE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "RED")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=.6, color='random-dark')
+```
+
+The two most common `RED` level incidents are shot activity spotter and robbery in progress. [Shot activity spotter](https://www.shotspotter.com/technology/) is an AI system equipped on police cars that detects the sound and location of gun shots and will automatically create an event when it is triggered.
+
+The are also some other pretty horrific call reasons including officer needs assistance, rape, hostage, cutting/stabbing, and more. `RED`is clearly the most serious incident.
+
+# How have these priority levels changed overtime?
+
+Next, it will be interesting to see how these levels of incidents have been changing overtime. Has more serious crimes picked up in Cincinnati or have these been gradually decreasing? We can look into this by using the code below.
+
+```{r}
+daily_calls <- police %>% 
+  group_by(date,PRIORITY_COLOR) %>% 
+  count() %>% 
+  drop_na()
+
+ggplot(daily_calls, aes(x=date, y=n,color = PRIORITY_COLOR)) +
+  scale_color_manual(values= sort(priority_colors$PRIORITY_COLOR)) +
+  geom_line() + 
+  xlab("Date") + 
+  ylab("Count of Calls per Day")
+```
+
+It can be seen that `PURPLE` and `YELLOW` level crimes have drastically decreased in 2020. This could be due to the pandemic and less crimes being committed as less people are out and about. Both of these are the lower level crimes and is good to see they are going down in the city.
+
+However, `BLUE` and `RED`, the higher level incidents, are increasing overtime. In 2020, `RED` and `BLUE` even had a large spike compared to years past. We can further analyze these trends on a calender year below.
+
+## How do these levels compare on a calender year? 
+
+We will now look at the `RED` and `BLUE` levels on a calender overtime. This will help point out any seasonality trends that may be present in the data.
+
+### BLUE incident level
+
+The below code will plot `BLUE` incident levels on a calender.
+
+```{r}
+day_police <- police %>%
+  group_by(date) %>%
+  subset(PRIORITY_COLOR == "BLUE") %>%
+  count()
+
+ggplot_calendar_heatmap(day_police,
+                        'date',
+                        'n') + scale_fill_continuous(low = 'green', high = 'red') +
+  facet_wrap(~ Year, ncol = 1)
+```
+`BLUE` levels have seemed to gotten worse overtime, spiking in summer 2020. 
+
+
+### RED incident level
+
+The below code will plot `RED` incident levels on a calender.
+
+```{r}
+day_police <- police %>%
+  group_by(date) %>%
+  subset(PRIORITY_COLOR == "RED") %>%
+  count()
+
+ggplot_calendar_heatmap(day_police,
+                        'date',
+                        'n') + scale_fill_continuous(low = 'green', high = 'red') +
+  facet_wrap(~ Year, ncol = 1)
+```
+`RED` levels had a slight increase in activity in summer 2020 similar to what occured with `BLUE` levels.
+
+# Conclusion 
+
+This analysis showed how the Cincinnati Police Department classifies all of the calls it receives. The four different levels,  `RED`,  `YELLOW`,  `BLUE`,  `PURPLE`, provide a relative scale of the severity of the crime. From analysis, it may be time to change some of the priority level's around.
+
+Traffic Stop in the yellow level being classified as the same priority level as drugs or child abuse is pretty crazy. The may mean it is time to switch things around.
+
+From the trends over time, purple and yellow level incidents have been decreasing over the past 2 years. Blue and red were relatveily constant until 2020 hit. These both are considered high level incidents and it discouraging to see these levels shoot up in 2020.
+
+

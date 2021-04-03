@@ -1,0 +1,280 @@
+---
+title: "Case 1 - College Data"
+author: "Nicholas Kemper"
+date: "1/31/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This case analyzes a college admission dataset. Each observation represents one college/university in the USA with different information.
+
+## Packages used
+
+The following packages are used in this analysis for data processing and visualizations.
+
+```{r message = FALSE}
+# For data processing
+library(tidyverse)
+library(reshape2)
+# For maps
+library(maps)
+# For plots
+library(corrplot)
+```
+
+
+## Read in and format the data
+
+First, we must read in the dataset. The following code is used to bring the data into R.
+
+```{r}
+college <- read.csv("college.csv")
+```
+
+The column ```loan_default_rate``` must be formatted as numeric when read in, as it is default a character. Some observations will be coerced to a NA value because of this.
+
+```{r}
+college$loan_default_rate <- as.numeric(college$loan_default_rate)
+```
+## Analysis
+
+### Data
+
+We will first see how many variables and observations are in the dataset.
+
+```nrow``` function will give the number of observations and ```ncol``` function will give the number of variables.
+
+```{r}
+# Number of observations
+nrow(college)
+# Number of variables
+ncol(college)
+```
+
+This dataset contains 1269 different colleges with 17 variables.
+
+### Missing values
+
+Next, we will explore which data is missing in the dataset. This below code will tell what is missing in our data.
+
+```{r}
+# Missing values
+na.vals <- apply(is.na(college), 2, which)
+na.vals
+```
+
+integer(0) means there is no missing data in the variable. The only variable containing missing data is ```loan_default_rate``` with 2 missing observations.
+
+### Variables Analysis
+
+The following variables are present in the ```college``` dataset:
+
+```{r}
+colnames(college)
+```
+
+* ```id``` refers to an id number assigned to the college, there is no real summary statistics in this column
+
+* ```name``` refers to the college's name
+
+* ```city``` is the city where the college is located
+
+* ```state``` refers to the state where the college is located. We can see the states with most colleges with the code below.
+
+```{r}
+college %>% 
+  group_by(state) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+
+
+
+* ```region``` refers to the region in the US where the college is located. Similar to above, we can explore where the majority of colleges lie
+
+```{r}
+college %>% 
+  group_by(region) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+* ```highest_degree``` refers to the highest degree offered at the school. Below we can see the counts of the degrees offered.
+
+```{r}
+college %>% 
+  group_by(highest_degree) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+
+* ```control``` refers to whether the college is public or private. We can see the amount of colleges with either status with the code below. This shows that their are more colleges that are private than public in the US, which might be surprising to some.
+
+```{r}
+college %>% 
+  group_by(control) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+* ```gender``` refers to if a school only allows a certain gender or is co-ed. We can see the counts with the code below.
+
+```{r}
+college %>% 
+  group_by(gender) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+* ```admission_rate``` refers to the admission rate for the school, with lower values indicating lower admissions. The distribution of admission rates and summary statistics in the US is shown below.
+
+```{r}
+hist(college$admission_rate)
+summary(college$admission_rate)
+```
+
+* ```sat_avg``` refers to the average SAT score for the school. The distribution of scores and summary statistics in the US is shown below.
+
+```{r}
+hist(college$sat_avg)
+summary(college$sat_avg)
+```
+
+* ```undergrads``` refers to the number of undergrads at the school. The distribution of students and summary statistics in the US is shown below. This shows that on average, most schools only have around 6,000 undergrads in this dataset, which may surprise some.
+
+```{r}
+hist(college$undergrads)
+summary(college$undergrads)
+```
+
+* ```tuition``` refers to the number of tuition of the school. The distribution of tuition and summary statistics in the US is shown below. This shows the the majority of schools have tuition less than $20,000, but some are a lot higher. This is likely to do with private schools.
+
+```{r}
+hist(college$tuition)
+summary(college$tuition)
+```
+
+* ```faculty_salary_avg``` refers to the average faculty salary at the school. The distribution of salaries and summary statistics in the US is shown below. Since these are relatives low, it is guessed that this represents monthly salary.
+
+```{r}
+hist(college$faculty_salary_avg)
+summary(college$faculty_salary_avg)
+```
+
+* ```loan_default_rate``` refers to how often students fail to pay back student loans based on initial agreements. The distribution of default rates and summary statistics in the US is shown below.
+
+```{r}
+hist(college$loan_default_rate)
+summary(college$loan_default_rate)
+```
+
+* ```median_debt``` refers to the median debt of gradates at the school. The distribution of debts and summary statistics in the US is shown below.
+
+```{r}
+hist(college$median_debt)
+summary(college$median_debt)
+```
+
+* ```lon``` and ```lat``` refer to the longitude and latitude of the school. Below shows a map of where the schools are located in the US. Most schools are located on the east/midwest coast. There is also some colleges in Alaska and Hawaii, but they are not shown on the map below.
+
+```{r}
+maps::map('state')
+points(x=college$lon, y=college$lat, col="tomato", cex=1, pch=20)
+```
+
+### Visuzalization of relationships
+
+Next, we will look into the relationship of some of the variables. To determain some interesting variables to analze, we will first look at the correlation between the numeric variables to see if there is any interesting things going on. The code below will produce a correlation plot of the variables.
+
+```{r}
+m <- college %>% 
+  # Get only the numeric columns
+  select_if(is.numeric) %>% 
+  # Don't need id, lon, or lat
+  select(-c(id,lon,lat)) %>% 
+  drop_na() %>% 
+  cor()
+
+corrplot(m)
+```
+
+There is a strong correlation between some of the variable. ```loan_default_rate``` and ```sat_avg``` have a strong, negative correlation, we can explore this relationship in a scatter plot.
+
+```{r}
+ggplot(college,aes(x = sat_avg,y = loan_default_rate)) + geom_point()
+```
+
+This plot shows as the ```sat_avg``` increases for a school, the ``loan_default_rate``` will decrease. This could be due that students with higher SAT scores are getting better jobs and can afford to pay off their loans, compared to schools with a lower SAT average.
+
+From the correlation plot above, we can see the ```sat_avg``` is highly correlated with ```faculty_salary_avg```. We can explore the relationship in the plot below.
+
+```{r}
+ggplot(college,aes(x = sat_avg,y = faculty_salary_avg)) + geom_point()
+```
+
+We can see as the ```sat_avg``` increases, so does the ```faculty_salary_avg```. This means that teachers at schools with a higher average SAT are getting paid better compared to at a school with a lower average.
+
+
+Next we will explore some relationships conditional on other variables. 
+
+We can explore the various US regions and control of the school to see whether these variables play a role in how often students are defaulting on their loans. The plot below creates this visualization for us to analyze.
+
+```{r}
+ggplot(college, aes(x = region, y = loan_default_rate, color = control)) + geom_boxplot()
+```
+
+From this plot, we can see that on average, schools in the south have the most students defaulting on their loans. In each region, it can also be seen that there are more students defaulting on loans in public schools then private. 
+
+We can take another look at the scatterplot above comparing the average SAT score and faculty average salary and see if there is any difference in private and public schools in this aspect. The below code will generate this plot.
+
+```{r}
+ggplot(college,aes(x = sat_avg,y = faculty_salary_avg,color = control)) + geom_point()
+```
+
+From this plot, you can visualize that teachers at public schools generally get paid more at the same average SAT score. However, at very high SAT average school, private teachers are making a lot more.
+
+### Final Questions
+
+One of the overall questions for this dataset it what causes students to default on their loans. This analysis will focus around this aspect. We explored earlier the relationship between loan default rate and SAT average and the relationship between regions and load default rate. 
+
+To investigate, the first question is does the median debt have anything to do this this? The plot is shown below:
+
+```{r}
+ggplot(college,aes(x = median_debt,y = loan_default_rate)) + geom_point()
+```
+
+Initially there is seems to be no trend between the loan default rate and median debt, but the loan default rate does seem to rise as median debt become larger
+
+To go into further, does it matter is a college is private or public? We cab visualize the above graph with colored labels below.
+
+```{r}
+ggplot(college,
+       aes(x = median_debt, y = loan_default_rate, color = control)) + geom_point()
+```
+
+We can see that private schools do have lower median debt, but it does not seem to contribute to the loan default rate.
+
+Next, how does the highest degree at the school affect the loan default rate?
+
+```{r}
+ggplot(college,aes(x = highest_degree,y = loan_default_rate,color = highest_degree)) + geom_boxplot()
+```
+
+From this, schools that only offer associate degrees have student much more likely to default on their loan. 
+
+What does region and the highest degree offered have in common with the load default rate?
+
+```{r}
+ggplot(college,aes(x = region,y = loan_default_rate,color = highest_degree)) + geom_boxplot()
+```
+
+Schools located in the south that only offer associate degrees have student that are most likely to default on their loans. 
+
+This analysis has shown that there are a variety of factors that contribute to a school's load default rate. 

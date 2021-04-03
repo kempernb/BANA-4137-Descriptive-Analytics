@@ -1,0 +1,383 @@
+---
+title: "BANA4137 Case 2 - CVG Flights"
+author: "Nicholas Kemper"
+date: "2/19/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+
+This case analyzes flight data to and from CVG airport. each row represents one flight either to or from CVG during 2015 January to March based in the United States. 
+
+## Packages used
+
+The following packages are used in this analysis for data processing and visualizations.
+
+```{r message = FALSE}
+# For data processing
+library(tidyverse)
+library(reshape2)
+library(maps)
+library(corrplot)
+
+library(maps)
+library(ggmap)
+library(leaflet)
+library(htmlwidgets) 
+library(maps)
+library(geosphere)
+
+library(usmap)
+library(data.table)
+library(geofacet)
+```
+
+
+# 1 Describing the dataset
+
+First we  read in and merge all the data into a single dataframe. The code below will handle this. 
+
+```{r}
+# 1 Read in and setup ----
+flights <- read.csv("CVG_Flights.csv", header = TRUE, stringsAsFactors = FALSE, na.strings = "")
+flights$FLIGHT_DATE <- as.Date(as.character(flights$FLIGHT_DATE), format = "%m/%d/%y")
+airports <-  read.csv("airports.csv", header = TRUE, stringsAsFactors = FALSE, na.strings = "")
+airlines <-  read.csv("airlines.csv", header = TRUE, stringsAsFactors = FALSE, na.strings = "")
+
+# Merge all the data
+first_dataframe <- left_join(flights, 
+                             airlines, 
+                             by=c("AIRLINE"="IATA_CODE"))
+head(first_dataframe)
+all_flights <- left_join(first_dataframe,
+                             airports,
+                             by=c("ORIGIN_AIRPORT"="IATA_CODE"))
+```
+
+
+The below code will tell us how many variables and observations are in each dataset
+
+How many rows are there in each data frame?
+
+```{r}
+nrow(flights)
+nrow(airports)
+nrow(airlines)
+```
+
+How many columns are there in each data frame?
+
+```{r}
+ncol(flights)
+ncol(airports)
+ncol(airlines)
+```
+
+# 2 Missing Values in the Dataset
+
+Next we can look into missing values in the dataset. The below code will find all the missing values in the overall dataset. This will report the names of the columns where there are values missing.
+
+```{r}
+na.vals <- apply(is.na(all_flights), 2, which)
+# Columns containing NA values
+na.vals <- na.vals[lapply(na.vals,length)>0]
+
+# Columns containing NA values
+names(na.vals)
+```
+
+As it turns out, values are missing in certain columns when a flight is canceled. Information such as the flight time and arrival time are not reported when a flight is canceled.
+
+# 3 Describing each variable
+
+Next we will look into each variable in the dataset and provide a summary and some analysis.
+
+```FLIGHT_DATE``` describes the date of the flight
+
+```{r}
+max(all_flights$FLIGHT_DATE)
+min(all_flights$FLIGHT_DATE)
+```
+
+Flights range from 01/01/15 - 03/10/15
+
+```AIRLINE``` describes the airline of the flight
+
+```{r}
+all_flights %>% 
+  group_by(AIRLINE) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+The ```Airlines``` dataset helps translate these values to actual airlines, there are no missing values in this dataset.
+
+```{r}
+head(airlines)
+```
+
+One thing to note about this dataset that the flights data is only representative of 5 airlines. Even though the airlines provide names for 14 airlines, the flights will only be from the 5 shown above.
+
+```FLIGHT_NUMBER``` descibes flight number for the flight
+
+```ORIGIN_AIRPORT``` and ```DESTINATION_AIRPORT``` describe the airports of the origin and destination of the flight.
+
+Below describes the two variables
+
+```{r}
+all_flights %>% 
+  group_by(ORIGIN_AIRPORT) %>% 
+  count() %>% 
+  arrange(desc(n))
+
+
+all_flights %>% 
+  group_by(DESTINATION_AIRPORT) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+The majority of origin and destination is CVG, this makes sense as it is a CVG dataset with all the flights to and from this airport. 
+
+The `airports` dataset helps expand upon these abbreviations and provides coordinates for each of the airports. Below is the dataset.
+
+```{r}
+head(airports)
+```
+
+
+```SCHEDULED_DEPARTURE``` is the time the flight was scheduled to depart
+```DEPARTURE_TIME``` is the actual departure time
+```DEPARTURE_DELAY``` is the delay between the scheduled and actual departure
+
+Below is the distribution of the departure delay
+
+```{r}
+hist(flights$DEPARTURE_DELAY)
+```
+
+Majority of the time there is no delay, but there can be long delays from time to time. This data is represented in minutes.
+
+```TAXI_OUT``` refers to the amount of time it takes the airline to get to the runway and takeoff from departure time.
+```WHEELS_OFF``` is the time when the wheels leave the runway.
+
+The distribution of ```TAXI_OUT``` is below:
+
+```{r}
+hist(flights$TAXI_OUT)
+```
+
+It usually takes ~15 minutes for a flight to be taxied out to the runway from the terminal.
+
+```SCHEDULED_TIME``` is the estimated time of a flight. It's distribution is below.
+
+```{r}
+hist(flights$SCHEDULED_TIME)
+```
+
+
+Most flights are less than or about 2 hours coming to and from CVG airport.
+
+```ELAPSED_TIME``` is the actual flight time. 
+
+We can see the difference between the estimated and actual time below to see how accurate the scheduled time is.
+
+
+```{r}
+hist(flights$ELAPSED_TIME - flights$SCHEDULED_TIME)
+```
+
+Estimated time does provide a very accurate prediction of the actual flight time. However, this can vary by up to an hour or so.
+
+```DISTANCE``` is how long the flight is. We can see the histogram below.
+
+```{r}
+hist(flights$DISTANCE)
+```
+
+Most the time flights are less than 1000 miles.
+
+```WHEELS_ON``` is the time which the flight arrives.
+```TAXI_IN``` is how long the flight takes to be taxied into the airport
+```SCHEDULED_ARRIVAL``` is the scheduled arrival time
+```ARRIVAL_TIME``` is the actual arrival time
+```ARRIVAL_DELAY``` is the difference between the actual and estimated arrival time, we can see the distribution below.
+
+```{r}
+hist(flights$ARRIVAL_DELAY)
+```
+
+Most of the time there is almost no delay from the predicted arrival delay. 
+
+```CANCELLED``` is if the flight was canceled or not. 1 represents if a flight was canceled and 0 means it was not canceled. We can see a summary below.
+
+```{r}
+all_flights %>% 
+  group_by(CANCELLED) %>% 
+  count() %>% 
+  arrange(desc(n))
+```
+
+
+Flights are very seldom canceled.
+
+```CANCELLATION_REASON``` is the reason the flight was canceled. We can see a summary below.
+
+```{r}
+all_flights %>% 
+  group_by(CANCELLATION_REASON) %>% 
+  count() %>%
+  drop_na() %>% 
+  arrange(desc(n))
+```
+
+A is the most popular reason a flight is canceled. There is no description of what A, B, or C provided.
+
+`AIR_SYSTEM_DELAY`	`SECURITY_DELAY`	`AIRLINE_DELAY`	`LATE_AIRCRAFT_DELAY`	`WEATHER_DELAY` all describe the time a flight was delayed. They are all numeric only contain a value if flight was delayed. Below are there histograms.
+
+
+```{r}
+hist(all_flights$AIR_SYSTEM_DELAY)
+hist(all_flights$SECURITY_DELAY)
+hist(all_flights$AIRLINE_DELAY)
+hist(all_flights$WEATHER_DELAY)
+```
+
+`AIR_SYSTEM_DELAY` is the longest reason why a flight was delayed. In this dataset, `SECURITY_DELAY` never caused a flight to be delayed.
+
+# 4 Relationship between distance and air time
+
+One interesting relationship to explore is the distance and air time of the flight and see how the the correlation is. This may be how the `SCHEDULED_TIME` is predicted for a flight.
+
+```{r}
+ggplot(all_flights,aes(x = DISTANCE, y = AIR_TIME)) + geom_point() + geom_smooth(method = "lm")
+
+mod <- lm(AIR_TIME ~ DISTANCE,data = all_flights)
+summary(mod)
+```
+
+There is a strong, positive correlation between the distance and air time, a correlation coefficient of 0.92 means the distance of the flight can very accurately predict the air time of a flight. Other variables may be taken into play to more accurately predict the air time of flight as well in a more complex model.
+
+# 5 Relation between deviation of schedule time and airline.
+
+Another question to ask about this dataset is does the difference in the airline and the elapsed time depend the airline? What airlines are doing a good job of making sure their flights are on time? The code below will perform this analysis.
+
+```{r}
+all_flights$arrival_deviation <- flights$ELAPSED_TIME - flights$SCHEDULED_TIME
+
+ggplot(all_flights,aes(x = AIRLINE, y = arrival_deviation)) + geom_boxplot()
+```
+
+All airlines in this data set predict well the arrival time at their estimation. Delta (DL) often over estimates their arrival time a little, but not by much. American Eagle Airline (MQ) has the longest tale. This means that this airline's flights is often late compared to the others. All airlines have longer tails on the positive deviation side, showing that flights are much more often late than early.
+
+# 6 & 7 are shown in the above alaysis.
+
+# Question 1: Is there a relationship between the airline and distance of the flight?
+
+The first question to investigate it which airlines are flying what sort of distances? Are there specific airlines that typically service shorter flights or longer flights? Or are all airline flying to every single airport in the data? The below boxplot will show us which airlines are flying which distances.
+
+```{r}
+ggplot(all_flights,aes(x = AIRLINE, y = DISTANCE)) + geom_boxplot()
+```
+
+Frontier Airlines Inc (F9) on average flies the longest distance flights. Skywest (OO) often flies the shortest flights out of all airlines. Delta (DL) flies almost everwhere, they have the largest spread in distance flown. 
+
+# Question 2: Where is frontier and skywest flying?
+
+Now the we know Frontier services the longest flights and Skywest services the shortest flights, it will be interesting to see where their airlines are flying. We can use a spacial map to visualize this.
+
+The below code will plot Frontier's flights to and from CVG.
+
+```{r}
+maps::map("world", col="grey", fill=TRUE, border=0,bg="white", lwd=0.05, 
+          xlim=c(-171.738281, -56.601563), ylim=c(12.039321, 71.856229)) #include the Alaska and Hawaii
+fsub <- flights[flights$AIRLINE == "F9",]  #flights of  AA
+for (j in 1:length(fsub$AIRLINE)) {        
+  air1 <- airports[airports$IATA_CODE == fsub[j,]$ORIGIN_AIRPORT,]  #iata code for j flights in airport1
+  air2 <- airports[airports$IATA_CODE == fsub[j,]$DESTINATION_AIRPORT,] #iata code for j flights in airport2
+  inter <- gcIntermediate(c(air1[1,]$LONGITUDE, air1[1,]$LATITUDE), c(air2[1,]$LONGITUDE, air2[1,]$LATITUDE), n=100, addStartEnd=TRUE)  #calculate the great circles
+  lines(inter, col="black", lwd=0.8)  #draw the line
+}
+```
+
+From the map, Frontier flies longer flights around the country. There is no destination very close to the CVG airport. It is also interesting Frontier does not fly north of Cincinnati.
+
+Next, we can look at Skywest's flights.
+
+```{r}
+
+maps::map("world", col="grey", fill=TRUE, border=0,bg="white", lwd=0.05, 
+          xlim=c(-171.738281, -56.601563), ylim=c(12.039321, 71.856229)) #include the Alaska and Hawaii
+fsub <- flights[flights$AIRLINE == "OO",]  #flights of  AA
+for (j in 1:length(fsub$AIRLINE)) {        
+  air1 <- airports[airports$IATA_CODE == fsub[j,]$ORIGIN_AIRPORT,]  #iata code for j flights in airport1
+  air2 <- airports[airports$IATA_CODE == fsub[j,]$DESTINATION_AIRPORT,] #iata code for j flights in airport2
+  inter <- gcIntermediate(c(air1[1,]$LONGITUDE, air1[1,]$LATITUDE), c(air2[1,]$LONGITUDE, air2[1,]$LATITUDE), n=100, addStartEnd=TRUE)  #calculate the great circles
+  lines(inter, col="black", lwd=0.8)  #draw the line
+}
+```
+
+Skywest for the majority flies in the midwest. There are some long distance flights, but many aren't too far from CVG. 
+
+Just for a comparison, all the US airports which CVG services from this dataset is shown in the plot below.
+
+```{r}
+maps::map("world", col="grey", fill=TRUE, border=0,bg="white", lwd=0.05, 
+          xlim=c(-171.738281, -56.601563), ylim=c(12.039321, 71.856229)) #include the Alaska and Hawaii
+fsub <- flights
+for (j in 1:length(fsub$AIRLINE)) {        
+  air1 <- airports[airports$IATA_CODE == fsub[j,]$ORIGIN_AIRPORT,]  #iata code for j flights in airport1
+  air2 <- airports[airports$IATA_CODE == fsub[j,]$DESTINATION_AIRPORT,] #iata code for j flights in airport2
+  inter <- gcIntermediate(c(air1[1,]$LONGITUDE, air1[1,]$LATITUDE), c(air2[1,]$LONGITUDE, air2[1,]$LATITUDE), n=100, addStartEnd=TRUE)  #calculate the great circles
+  lines(inter, col="black", lwd=0.8)  #draw the line
+}
+```
+
+
+# Question 3: Where does CVG service the most flights to? Where are the most flights coming to CVG from?
+
+It will be interesting to see where CVG services the most flights to and also where the most flights from CVG are serviced. The spacial map below can be created to see the where the most flights go.
+
+Below shows the state and amount of flights where CVG flights are going. 
+
+```{r}
+flights_state <- flights %>% 
+  select(ORIGIN_AIRPORT) %>% 
+  merge(airports, by.x = "ORIGIN_AIRPORT",by.y = "IATA_CODE") %>% 
+  subset(STATE != "KY") %>% 
+  group_by(STATE) %>% 
+  count() %>% 
+  mutate(state = STATE)
+  
+
+plot_usmap(data = flights_state, values = "n", color = "red") + 
+  scale_fill_continuous(name = "CVG origin flights", label = scales::comma) + 
+  theme(legend.position = "right")
+```
+
+Most of the CVG flights are heading to Illinois or Texas. It is interesting as Illinois is not that far from Cincinnati and may be servicing a lot of connection flights. Georgia and Florida are also popular destinations from CVG. 
+
+Below is the map for CVG destination flights.
+
+```{r}
+
+flights_state <- flights %>% 
+  select(DESTINATION_AIRPORT) %>% 
+  merge(airports, by.x = "DESTINATION_AIRPORT",by.y = "IATA_CODE") %>% 
+  subset(STATE != "KY") %>% 
+  group_by(STATE) %>% 
+  count() %>% 
+  mutate(state = STATE)
+
+
+plot_usmap(data = flights_state, values = "n", color = "red") + 
+  scale_fill_continuous(name = "CVG destination flights", label = scales::comma) + 
+  theme(legend.position = "right")
+```
+
+These two plots are almost identical in the amount of flights. This shows there's just as many flights leaving CVG as coming in, and the same places are common origin and destinations.
+

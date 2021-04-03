@@ -1,0 +1,172 @@
+---
+title: "BANA4137 Homework 2"
+author: "Nicholas Kemper"
+date: "1/22/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## BANA4137 Homework 2
+
+Libraries being used
+
+```{r}
+library(tidyverse)
+```
+
+
+1. Read in data
+
+```{r}
+flights <-
+  read.csv(
+    "CVG_Flights.csv",
+    header = TRUE,
+    stringsAsFactors = FALSE,
+    na.strings = ""
+  )
+
+airports <-
+  read.csv(
+    "airports.csv",
+    header = TRUE,
+    stringsAsFactors = FALSE,
+    na.strings = ""
+  )
+
+airlines <-
+  read.csv(
+    "airlines.csv",
+    header = TRUE,
+    stringsAsFactors = FALSE,
+    na.strings = ""
+  )
+```
+
+2. How many rows are there in each data frame?
+
+```{r}
+nrow(flights)
+nrow(airports)
+nrow(airlines)
+```
+
+3. How many columns are there in each data frame?
+
+```{r}
+ncol(flights)
+ncol(airports)
+ncol(airlines)
+```
+
+4. Merge all three data frames into one data frame, according to the IATA code for airlines and airports.
+
+```{r}
+first_dataframe <- left_join(flights, 
+                             airlines, 
+                             by=c("AIRLINE"="IATA_CODE"))
+head(first_dataframe)
+total_dataframe <- left_join(first_dataframe,
+                             airports,
+                             by=c("ORIGIN_AIRPORT"="IATA_CODE"))
+head(total_dataframe)
+```
+
+5. For this merged data set, print the first six rows and last six rows.
+
+```{r}
+head(total_dataframe,6)
+tail(total_dataframe,6)
+```
+
+6. For this merged data set, are there any missing values? In what variables are these missing values?
+
+```{r}
+na.vals <- apply(is.na(total_dataframe), 2, which)
+
+# Columns containing NA values
+na.vals <- na.vals[lapply(na.vals,length)>0]
+
+# Columns containing NA values
+names(na.vals)
+```
+
+7. What is the proportion of canceled flights (to all flights)? How many different cancellation reasons are there?
+
+```{r}
+# Proportion of canceled flights (
+(total_dataframe %>%
+    subset(CANCELLED == 1) %>%
+    nrow()) / nrow(total_dataframe)
+
+# Cancellation reason
+total_dataframe %>% 
+  select(CANCELLATION_REASON) %>% 
+  drop_na() %>% 
+  unique()
+
+# Three different reasons
+```
+
+8. For DEPARTURE_TIME, are there missing values? Do we know why these values are missing?
+
+```{r}
+# 8 Missing departure times
+na.vals$DEPARTURE_TIME
+
+# occurs when flight is canceled
+```
+
+9. In the merged data frame, create a new variable (i.e., new column) as the time difference between the SCHEDULED_TIME and the ELAPSED_TIME, i.e., SCHEDULED_TIME - ELAPSED_TIME. Print the first and last six rows of the revised data frame.
+
+```{r}
+total_dataframe$TOTAL_TIME <-
+  total_dataframe$SCHEDULED_TIME -  total_dataframe$ELAPSED_TIME
+
+head(total_dataframe, 6)
+tail(total_dataframe, 6)
+```
+
+10. Extract the observations (i.e., rows) with AIRLINE of Delta and ORIGIN_AIRPORT of Cincinnati/Northern Kentucky International Airport, and put these observations into a new data frame. Print the first and last six rows of the new data frame.
+
+```{r}
+cvgDelta <- total_dataframe %>%
+  subset(AIRLINE.y == "Delta Air Lines Inc." &
+           ORIGIN_AIRPORT == "CVG")
+
+head(cvgDelta, 6)
+tail(cvgDelta, 6)
+```
+
+11. Extract the observations (i.e., rows) with AIRLINE of Delta, ORIGIN_AIRPORT of Cincinnati/Northern Kentucky International Airport, and DEPARTURE_DELAY time larger than 30 minutes, and put these observations into a new data frame. Print the first and last six rows of the new data frame.
+
+```{r}
+cvgDeltaLongDelay <- total_dataframe %>%
+  subset(AIRLINE.y == "Delta Air Lines Inc." &
+           ORIGIN_AIRPORT == "CVG" &
+           DEPARTURE_DELAY > 30)
+
+head(cvgDeltaLongDelay, 6)
+tail(cvgDeltaLongDelay, 6)
+```
+
+12. Use group_by() and summarize() to compute the average delay time for different airlines.
+
+```{r}
+total_dataframe %>% 
+  group_by(AIRLINE) %>% 
+  summarise(mean = mean(DEPARTURE_DELAY,na.rm = T))
+```
+
+13. Use group_by() and summarize() to compute the average delay time for different ORIGIN_AIRPORT.
+
+```{r}
+total_dataframe %>% 
+  group_by(ORIGIN_AIRPORT) %>% 
+  summarise(mean = mean(DEPARTURE_DELAY,na.rm = T))
+```
+
+

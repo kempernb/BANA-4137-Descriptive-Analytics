@@ -1,0 +1,266 @@
+---
+title: "Final Project - Bana 4137"
+author: "Nicholas Kemper, Emma Stidd, Acadia Morgan, Debjyoti Ghosh"
+date: "2/25/2021"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Chrun Modeling
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+library(tidyverse)
+library(readr)
+Churn_Modeling <- read_csv("Churn Modeling.csv")
+```
+
+Question 1: Does the person's age have a correlation to the balance in their account conditional to male and female?
+
+```{r}
+library(ggplot2)
+ggplot(data = Churn_Modeling, aes(x = Age, y = Balance, color = Gender))+
+geom_point()+
+geom_smooth()+
+labs(title = "Balance of Account vs Age", subtitle = "Female vs Male", x = "Age", y = "Balance")
+```
+
+From the scatterplot and smooth line that was created, there does not seem to be a correlation to age and balance in accounts. This was surprising because generally you think the older a person gets the more money they would have. However with investments and churning, I think it is a little different and explains why there is not a visual correlation. The trend lines for both male and female seem to look pretty flat which validates our hypothesis that there does not seem to be a trend between these variables. One thing we do notice is that there is generally a balance of 50,000 to 200,000, then there are several customers with balances of 0. 
+
+
+
+Question 2: Is there a relationship between region and balance in account conditional to whether the customer churned or not?
+
+```{r}
+ggplot(data = Churn_Modeling, aes(x = Exited, y = Balance, fill = Geography))+
+geom_bar(position = "dodge", stat = "summary", fun = "mean")+
+labs(title = "Balance of Account vs Churning", subtitle = "Between Countries", x = "Did the Customer Exit?", y = "Average Balance")
+```
+
+In this analysis, it appears that if a customer churns, the balance in their account may be a small amount higher than a customer who decides not to churn. In the graph, the left side indicates the customers who did not churn in France, Germany, and Spain. On the right it is customers who did churn in those countries. In every country, the right side is a little bit higher. In Germany the average account balance is almost double that in France and Spain. This could be because Germany is a wealthier country than the other 2. 
+
+# Cincinnati Police Police Calls for Service Data Analysis
+
+This dataset captures all Cincinnati Police Department Calls for Service. The City of Cincinnati's Computer Aided Dispatch (CAD) system records police incident response activity, which includes all calls for service to emergency operators, 911, alarms, police radio and non-emergency calls. CAD records all dispatch information, which is used by dispatchers, field supervisors, and on-scene officers to determine the priority, severity, and response needs surrounding the incident. Once an officer responds to a call, he/she updates the disposition to reflect findings on-scene.
+
+```{r message = FALSE}
+library(tidyverse)
+library(lubridate)
+library(highcharter)
+library(RColorBrewer)
+library(ggTimeSeries)
+library(RColorBrewer)
+library(wordcloud)
+library(wordcloud2)
+library(tidyverse)
+library(tm)
+library(htmlwidgets)
+```
+
+# Cincinnati Police Data
+
+Read Cincinnati Police Data, from 2018 - 2020. Only these years are selected and analyzed as the dataset is quite large. When reading in, one can see each of the columns reported.
+
+Each row in the dataset represents a single police call for service. Many different variables are reported for each call.
+
+```{r message = FALSE} 
+# Police data, only from years 2018-20 ----
+police <-
+  read_csv(
+    "police.csv"
+  )
+```
+
+# Formatting the data
+
+Some of the columns need to be formatted as a date-time in the dataset. We can do this with the code below. 
+
+```{r}
+police$CREATE_DATE <- as.Date(substring(police$CREATE_TIME_INCIDENT,1,10),format="%m/%d/%Y")
+police$CREATE_TIME_INCIDENT <- as.POSIXct(police$CREATE_TIME_INCIDENT, format="%m/%d/%Y %H:%M:%S")
+police$ARRIVAL_TIME_PRIMARY_UNIT <- as.POSIXct(police$ARRIVAL_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+police$CLOSED_TIME_INCIDENT <- as.POSIXct(police$ARRIVAL_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+police$DISPATCH_TIME_PRIMARY_UNIT <- as.POSIXct(police$DISPATCH_TIME_PRIMARY_UNIT, format="%m/%d/%Y %H:%M:%S")
+```
+
+Here we create some year and date variables for analysis in the future. The code below will create year and date variables and remove years that contain NA values.
+
+```{r}
+# Create a year variable ----
+police$year <- year(police$CREATE_TIME_INCIDENT)
+# Create a date variable ----
+police$date <- as.Date(police$CREATE_TIME_INCIDENT)
+# drop NA values
+police <- police[!is.na(police$year), ]
+```
+
+# Question: How does the Cincinnati Police Department categorize events?
+
+The Cincinnati police department assigns a priority color to each event it catagorizes, the code below shows each of the levels of priority colors.
+
+```{r}
+priority_colors <- police %>% 
+  dplyr::select(PRIORITY_COLOR) %>% 
+  drop_na() %>%
+  unique()
+
+colors <- priority_colors$PRIORITY_COLOR
+colors
+```
+
+
+There are four buckets of colors, `RED`,  `YELLOW`,  `BLUE`,  `PURPLE`. It will be interesting to further dive in and see what each level means in the dataset, 
+
+Each police call is also represented by a description of the event. By selecting descriptions at a specific priority level, we can perform text analysis and further analyze what each priority level really means.
+
+The below code is a function that will perform text analysis on this specific police call dataset and return frequent words from the `INCIDENT_TYPE_DESC`, incident description, variable.
+
+```{r  warning = FALSE}
+set.seed(1234) # for reproducibility
+ freqWordsPolice <- function(police_color){
+    text <- police_color$INCIDENT_TYPE_DESC
+    docs <- Corpus(VectorSource(text))
+    docs <- docs %>%
+      tm_map(removeNumbers) %>%
+      tm_map(removePunctuation) %>%
+      tm_map(stripWhitespace)
+    docs <- tm_map(docs, content_transformer(tolower))
+    docs <- tm_map(docs, removeWords, stopwords("english"))
+    dtm <- TermDocumentMatrix(docs)
+    matrix <- as.matrix(dtm)
+    words <- sort(rowSums(matrix), decreasing = TRUE)
+    df <- data.frame(word = names(words), freq = words)
+    
+    return(df)
+}
+```
+
+We can then visualize what type of words and descriptions are being used at each priority color by using word clouds. 
+
+## Purple Priority level analysis
+
+The below code performs analysis on `PURPLE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "PURPLE")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1.5, color='random-dark')
+```
+
+Common types of `PURPLE` level incidents include tresspassing, theft, and noise complaints. From this analysis, purple level incidents are relatively low-level crimes.
+
+## YELLOW Priority level analysis
+
+The below code performs analysis on `YELLOW` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "YELLOW")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1, color='random-dark')
+```
+
+The largest type of `YELLOW` level priority is a traffic stop. There are other incidents that are classified with a traffic stop that seem low in priority. This includes assault, armed, drug activity, and child abuse. This is interesting to see all these grouped in the same level.
+
+## BLUE Priority level analysis
+
+The below code performs analysis on `BLUE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "BLUE")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=1.5, color='random-dark')
+```
+
+Common `BLUE` level incidents include accident with injuries, disorderly, indicated a specific emergency, hazard to traffic, and much more. Some of these events seem higher priority than the `YELLOW` and some do not.
+
+## BLUE Priority level analysis
+
+The below code performs analysis on `BLUE` level incidents.
+
+```{r warning = FALSE}
+police_color <- police %>%
+  subset(PRIORITY_COLOR == "RED")
+
+words <- freqWordsPolice(police_color)
+
+wordcloud2(data=words, size=.6, color='random-dark')
+```
+
+The two most common `RED` level incidents are shot activity spotter and robbery in progress. [Shot activity spotter](https://www.shotspotter.com/technology/) is an AI system equipped on police cars that detects the sound and location of gun shots and will automatically create an event when it is triggered.
+
+The are also some other pretty horrific call reasons including officer needs assistance, rape, hostage, cutting/stabbing, and more. `RED`is clearly the most serious incident.
+
+# How have these priority levels changed overtime?
+
+Next, it will be interesting to see how these levels of incidents have been changing overtime. Has more serious crimes picked up in Cincinnati or have these been gradually decreasing? We can look into this by using the code below.
+
+```{r}
+daily_calls <- police %>% 
+  group_by(date,PRIORITY_COLOR) %>% 
+  count() %>% 
+  drop_na()
+
+ggplot(daily_calls, aes(x=date, y=n,color = PRIORITY_COLOR)) +
+  scale_color_manual(values= sort(priority_colors$PRIORITY_COLOR)) +
+  geom_line() + 
+  xlab("Date") + 
+  ylab("Count of Calls per Day")
+```
+
+It can be seen that `PURPLE` and `YELLOW` level crimes have drastically decreased in 2020. This could be due to the pandemic and less crimes being committed as less people are out and about. Both of these are the lower level crimes and is good to see they are going down in the city.
+
+However, `BLUE` and `RED`, the higher level incidents, are increasing overtime. In 2020, `RED` and `BLUE` even had a large spike compared to years past. We can further analyze these trends on a calender year below.
+
+## Calender analysis
+
+### BLUE incident level
+
+The below code will plot `BLUE` incident levels on a calender.
+
+```{r}
+day_police <- police %>%
+  group_by(date) %>%
+  subset(PRIORITY_COLOR == "BLUE") %>%
+  count()
+
+ggplot_calendar_heatmap(day_police,
+                        'date',
+                        'n') + scale_fill_continuous(low = 'green', high = 'red') +
+  facet_wrap(~ Year, ncol = 1)
+```
+`BLUE` levels have seemed to gotten worse overtime, spiking in summer 2020. 
+
+
+### RED incident level
+
+The below code will plot `RED` incident levels on a calender.
+
+```{r}
+day_police <- police %>%
+  group_by(date) %>%
+  subset(PRIORITY_COLOR == "RED") %>%
+  count()
+
+ggplot_calendar_heatmap(day_police,
+                        'date',
+                        'n') + scale_fill_continuous(low = 'green', high = 'red') +
+  facet_wrap(~ Year, ncol = 1)
+```
+`RED` levels had a slight increase in activity in summer 2020 similar to what occured with `BLUE` levels.
+
+
+
